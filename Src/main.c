@@ -24,7 +24,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "tools.h"
+#include "task_scheduler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,6 +56,8 @@ TIM_HandleTypeDef htim8;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+SchedulerTasks stsTasks;
+Task ledTask;
 
 /* USER CODE END PV */
 
@@ -76,6 +79,21 @@ static void MX_TIM8_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/**
+ *  Led task
+ */
+void led()
+{
+	HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
+}
+
+void print(const char *s) {
+  while (*s!='\0') {
+	  HAL_UART_Transmit(&huart2, (uint8_t *)s++, 1, 0xFFFF);
+	  //TODO: Use DMA or IT to send data
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -119,13 +137,22 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
-
+  print("System Initialized\r\n");
+  SchedulerInit(&stsTasks);
+  print("Scheduler Initialized\r\n");
+  TaskCreate(&stsTasks, &ledTask, &led, 255);
+  TaskStart(&ledTask, 500);
+  print("Created LED Task\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
+  print("Start Scheduler\r\n");
+
+  while(1)
   {
+	  //Start Schedulers
+	  Scheduler(&stsTasks);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
