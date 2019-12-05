@@ -24,6 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "usbd_cdc_if.h"
 #include "tools.h"
 #include "task_scheduler.h"
 /* USER CODE END Includes */
@@ -86,6 +87,24 @@ static void MX_TIM8_Init(void);
 void led()
 {
 	HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
+}
+
+/**
+ * USB Send task
+ */
+void usbSend()
+{
+	HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+	/* CDC structure where we check if the USB is transmitting */
+	USBD_CDC_HandleTypeDef  *hcdc;
+	/* if USB ready and sent previous data start transmitting*/
+	if(hUsbDeviceFS.dev_state ==  USBD_STATE_CONFIGURED && (hcdc = hUsbDeviceFS.pClassData) != 0 && hcdc->TxState == 0)
+	{
+	  /* send data over usb, we have 1000 16bit samples which is 2000bytes */
+	  //TODO Use usb to send data instead UART
+	  //CDC_Transmit_FS((uint8_t *)aDataP, 2000);
+	  /* after finish transmit we can send more */
+	}
 }
 
 void print(const char *s) {
