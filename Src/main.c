@@ -31,7 +31,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -57,9 +56,33 @@ TIM_HandleTypeDef htim8;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-SchedulerTasks stsTasks;
-Task ledTask;
+/**USART2 GPIO Configuration
+PA2     ------> USART2_TX
+PA3     ------> USART2_RX
+*/
 
+SchedulerTasks stsTasks;
+Task tLedTask, tSendPos;
+Task tCore;
+
+//Variable for IntToChar function
+char text[12] = {0};
+
+volatile int vgActualPos;
+
+volatile uint16_t vgStartSpeed;
+volatile uint16_t vgActualSpeed;
+volatile uint16_t vgTargetSpeed;
+volatile uint16_t vgRisingRamp;
+volatile uint16_t vgFallingRamp;
+volatile uint32_t vgFallingRampStartPos;
+volatile uint32_t vgTargetPos;
+volatile uint32_t vgActualMovementPos;
+volatile uint8_t vgMovementState;
+volatile DIRECTION vgDIR = FORWARD;
+volatile uint8_t vgMovementFinishFlag = 1;
+
+uint8_t flag = 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,12 +104,86 @@ static void MX_TIM8_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void print(const char *s) {
+  while (*s!='\0') {
+	  HAL_UART_Transmit(&huart2, (uint8_t *)s++, 1, 10);
+	  //TODO: Use DMA or IT to send data
+  }
+}
+
 /**
  *  Led task
  */
 void led()
 {
 	HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
+}
+
+/*
+ * Go to correct position and stop
+ */
+void MotorStartPos()
+{
+
+}
+
+
+
+/*	Generate pulses to motor
+ *	Parameter:
+ *	rising_ramp - in Hz
+ *	falling_ramp - in Hz
+ *	start_speed - in Hz
+ *	target_speed - in Hz
+ *	pulses - how many pulses
+ *	dir - FORWARD/REVERSE
+ */
+void MotorStartPulsesRamp(uint16_t rising_ramp, uint16_t falling_ramp,uint16_t start_speed, uint16_t target_speed, uint32_t pulses, DIRECTION dir)
+{
+	if(dir == FORWARD)
+	{
+		HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin,GPIO_PIN_RESET);
+		vgDIR = FORWARD;
+	} else {
+		HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin,GPIO_PIN_SET);
+		vgDIR = REVERSE;
+	}
+	//Calculate parameters for PWM, ramps, pulses itd.
+	vgMovementState = 0;
+	vgActualMovementPos = 0;
+	vgMovementFinishFlag = 0;
+	vgActualPos = 0; //Not absolute position, just relative and only positive
+	vgStartSpeed = start_speed;
+	vgActualSpeed = start_speed;
+	vgTargetSpeed = target_speed;
+	vgRisingRamp = rising_ramp;
+	vgFallingRampStartPos = pulses - (target_speed/falling_ramp);
+	vgFallingRamp = falling_ramp;
+	vgTargetPos = pulses;
+
+	//Set start frequency of the PWM
+	htim3.Instance->PSC = (uint16_t)((uint32_t)84000000/((uint32_t)start_speed*1049)-1);
+	//Start PWM
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+}
+
+/*
+ * Motor stop
+ */
+void MotorStop()
+{
+	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_1);
+}
+
+/**
+ *  Led task
+ */
+void sendPos()
+{
+	print("Pos: ");
+	//IntToChar((htim1.Instance->CNT + pos), text);
+	print(text);
+	print("\r\n");
 }
 
 /**
@@ -107,11 +204,21 @@ void usbSend()
 	}
 }
 
-void print(const char *s) {
-  while (*s!='\0') {
-	  HAL_UART_Transmit(&huart2, (uint8_t *)s++, 1, 0xFFFF);
-	  //TODO: Use DMA or IT to send data
-  }
+void Core()
+{
+
+	if(vgMovementFinishFlag)
+	{
+		if(flag)
+		{
+			MotorStartPulsesRamp(1,2,5,1000,5000,FORWARD);
+			flag = 0;
+		} else
+		{
+			MotorStartPulsesRamp(1,2,5,1000,5000,REVERSE);
+			flag = 1;
+		}
+	}
 }
 
 /* USER CODE END 0 */
@@ -156,13 +263,18 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
-  print("System Initialized\r\n");
+
   SchedulerInit(&stsTasks);
-  print("Scheduler Initialized\r\n");
-  TaskCreate(&stsTasks, &ledTask, &led, 255);
-  TaskStart(&ledTask, 500);
-  print("Created LED Task\r\n");
+  TaskCreate(&stsTasks, &tLedTask, &led, 255);
+  TaskStart(&tLedTask, 500);
+  TaskCreate(&stsTasks, &tCore, &Core, 5);
+  TaskStart(&tCore, 2000);
   /* USER CODE END 2 */
+
+	//Enabled Timer1 responsible for change PWM frequency and other stuff
+	__HAL_TIM_CLEAR_IT(&htim1, TIM_IT_TRIGGER);
+	__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_TRIGGER);
+	HAL_TIM_Base_Start(&htim1);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -240,9 +352,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 1;
+  htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 0;
+  htim1.Init.Period = 0xFFFF;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -250,7 +362,7 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_TRIGGER;
+  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_EXTERNAL1;
   sSlaveConfig.InputTrigger = TIM_TS_ITR2;
   if (HAL_TIM_SlaveConfigSynchro(&htim1, &sSlaveConfig) != HAL_OK)
   {
@@ -341,7 +453,7 @@ static void MX_TIM3_Init(void)
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 1049;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -355,7 +467,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC1REF;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_ENABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
@@ -502,9 +614,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 1311;
+  htim6.Init.Prescaler = 8399;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 3;
+  htim6.Init.Period = 9;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -581,7 +693,7 @@ static void MX_TIM8_Init(void)
   htim8.Instance = TIM8;
   htim8.Init.Prescaler = 1;
   htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim8.Init.Period = 0;
+  htim8.Init.Period = 0xFFFF;
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim8.Init.RepetitionCounter = 0;
   htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;

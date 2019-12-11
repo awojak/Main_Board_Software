@@ -58,13 +58,26 @@ PSC = 39 999
 Dla 50Hz:
 PSC = 1599
 Interconnection (s. 632): 
-TIM3_TRGO -> TIM1 (ITR2)
+TIM3_TRGO (CH1) -> TIM1 (ITR2)
 
 ### TIM4
 Generate PWM signal (STEP)
-TIM4_TRGO -> TIM8 (ITR2)
+TIM4_TRGO (CH1) -> TIM8 (ITR2)
 
 Rememeber to set MMS Master mode selection
 TIMx_CR2->MMS = 100: Compare - OC1REF signal is used as trigger output (TRGO
 
 TIM1 and TIM8 are 16bit timer so its need software increase number of counts use interrupt when overflow
+
+### STEP/DIR
+Zasada generowania sygnału step/dir.
+Wykorzystujemy dwa timery główny który generuje sygnał PWM oraz pocniczy do zliczania wygenerowanych impulsów i zmiany wypełnienia głównego timera.
+
+1. Włączamy pomocniczy timer dla kanału pierwszego jest to TIM1
+2. Ustawiamy odpowiednią częstotliwość początkową PWM timera TIM3
+3. Włączmy timer3.
+4. Każdy sygnał rising wygenerowany przez timer 3 jest zlicznany w TIM1.
+6. TIM1 ma ustawiony external trigger event do generowania przerwań, każdy przychodzący impuls od TIM3 jest zliczany i generowane jest przerwanie.
+7. W przerwaniu nastepuję zwiększenie lub zmiejszenie częstotliwośći TIM3 zależnie od potrzeby, w ten sposób będzie wygenerowana rampa.
+8. W razie potrzeby będzie można zatrzymać generowanie przerwań.
+9. Można zliczać wygenerowane impulsy zależnie od kierunku.

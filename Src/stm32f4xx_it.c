@@ -23,6 +23,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "task_scheduler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,7 +43,18 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+extern volatile int vgActualPos;
+extern volatile uint16_t vgStartSpeed;
+extern volatile uint16_t vgActualSpeed;
+extern volatile uint16_t vgTargetSpeed;
+extern volatile uint16_t vgRisingRamp;
+extern volatile uint16_t vgFallingRamp;
+extern volatile uint16_t vgTargetPos;
+extern volatile uint32_t vgFallingRampStartPos;
+extern volatile uint32_t vgActualMovementPos;
+extern volatile uint8_t vgMovementState;
+extern volatile uint8_t vgMovementFinishFlag;
+extern volatile DIRECTION vgDIR;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,7 +74,7 @@ extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
 extern TIM_HandleTypeDef htim8;
 /* USER CODE BEGIN EV */
-
+extern TIM_HandleTypeDef htim3;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -186,7 +198,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
-
+  TaskTick();
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
@@ -202,17 +214,79 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles TIM1 update interrupt and TIM10 global interrupt.
+  * @brief This function handles TIM1 trigger and commutation interrupts and TIM11 global interrupt.
   */
-void TIM1_UP_TIM10_IRQHandler(void)
+void TIM1_TRG_COM_TIM11_IRQHandler(void)
 {
-  /* USER CODE BEGIN TIM1_UP_TIM10_IRQn 0 */
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM11_IRQn 0 */
+	/* TIM Trigger detection event */
+	if (__HAL_TIM_GET_FLAG(&htim1, TIM_FLAG_TRIGGER) != RESET)
+	{
+		if (__HAL_TIM_GET_IT_SOURCE(&htim1, TIM_IT_TRIGGER) != RESET)
+		{
+			if(vgDIR == FORWARD)
+			{
+			  vgActualPos++;
+			} else
+			{
+			  vgActualPos--;
+			}
 
-  /* USER CODE END TIM1_UP_TIM10_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim1);
-  /* USER CODE BEGIN TIM1_UP_TIM10_IRQn 1 */
+			//Increment Actual Movement Position
+			vgActualMovementPos++;
 
-  /* USER CODE END TIM1_UP_TIM10_IRQn 1 */
+			if(vgMovementState == 0)
+			{
+			  //Rising Ramp
+			  vgActualSpeed += vgRisingRamp;
+			  if(vgActualSpeed < vgTargetSpeed)
+				  htim3.Instance->PSC = (uint16_t)((uint32_t)84000000/((uint32_t)vgActualSpeed*1049)-1);
+			  else
+			  {
+				  htim3.Instance->PSC = (uint16_t)((uint32_t)84000000/((uint32_t)vgTargetSpeed*1049)-1);
+				  vgMovementState = 1;
+			  }
+
+			} else if(vgMovementState == 1)
+			{
+			  //Constant Freq
+			  if(vgActualMovementPos >= vgFallingRampStartPos)
+				  vgMovementState = 2;
+
+			} else if(vgMovementState == 2)
+			{
+			  //Falling Ramp
+			  vgActualSpeed -= vgFallingRamp;
+			  if(vgActualSpeed <= vgStartSpeed)
+			  {
+				  htim3.Instance->PSC = (uint16_t)((uint32_t)84000000/((uint32_t)vgStartSpeed*1049)-1);
+				  vgMovementState = 3;
+			  } else {
+				  htim3.Instance->PSC = (uint16_t)((uint32_t)84000000/((uint32_t)vgActualSpeed*1049)-1);
+			  }
+
+			}
+
+			//Clear Flag
+			__HAL_TIM_CLEAR_IT(&htim1, TIM_IT_TRIGGER);
+
+			//Remove below HAL_TIM_IRQHandler(&htim1);
+
+  /* USER CODE END TIM1_TRG_COM_TIM11_IRQn 0 */
+  //HAL_TIM_IRQHandler(&htim1);
+  /* USER CODE BEGIN TIM1_TRG_COM_TIM11_IRQn 1 */
+
+			if(vgActualMovementPos>=vgTargetPos)
+			{
+				//Stop PWM
+				HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_1);
+				//HAL_TIM_Base_Stop(&htim1);
+				//Set Finish Flag
+				vgMovementFinishFlag = 1;
+			}
+		}
+	}
+  /* USER CODE END TIM1_TRG_COM_TIM11_IRQn 1 */
 }
 
 /**
@@ -235,7 +309,6 @@ void TIM8_UP_TIM13_IRQHandler(void)
 void TIM6_DAC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
-
   /* USER CODE END TIM6_DAC_IRQn 0 */
   HAL_TIM_IRQHandler(&htim6);
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */

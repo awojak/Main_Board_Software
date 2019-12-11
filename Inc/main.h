@@ -37,7 +37,7 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
+typedef enum tDIRECTION {REVERSE=0, FORWARD} DIRECTION;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
