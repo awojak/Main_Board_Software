@@ -68,8 +68,6 @@ void Error_Handler(void);
 #define ENC2_A_GPIO_Port GPIOA
 #define ENC2_B_Pin GPIO_PIN_1
 #define ENC2_B_GPIO_Port GPIOA
-#define STEP1_Pin GPIO_PIN_6
-#define STEP1_GPIO_Port GPIOA
 #define DIR1_Pin GPIO_PIN_7
 #define DIR1_GPIO_Port GPIOA
 #define PF_Input_Pin GPIO_PIN_0

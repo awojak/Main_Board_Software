@@ -7,6 +7,7 @@
  */
 
 #include "tools.h"
+//#include "main.h"
 
 /**
  * Function convert integer number to text
@@ -58,6 +59,64 @@ int IntToChar(int number, char *text)
 /**
  * Need check and update
  */
-uint8_t BCDToNumber(uint8_t n) {
-	return ((((uint16_t)(n&0xF0)*10)>>4)+(n&0x0F));
+unsigned char BCDToNumber(unsigned char n) {
+	return ((((unsigned short)(n&0xF0)*10)>>4)+(n&0x0F));
 }
+
+/*! \brief Square root routine.
+ *
+ * sqrt routine 'grupe', from comp.sys.ibm.pc.programmer
+ * Subject: Summary: SQRT(int) algorithm (with profiling)
+ *    From: warwick@cs.uq.oz.au (Warwick Allison)
+ *    Date: Tue Oct 8 09:16:35 1991
+ *
+ *  \param x  Value to find square root of.
+ *  \return  Square root of x.
+ */
+unsigned long Sqrt(unsigned long x)
+{
+  register unsigned long xr;  // result register
+  register unsigned long q2;  // scan-bit register
+  register unsigned char f;   // flag (one bit)
+
+  xr = 0;                     // clear result
+  q2 = 0x40000000L;           // higest possible result bit
+  do
+  {
+    if((xr + q2) <= x)
+    {
+      x -= xr + q2;
+      f = 1;                  // set flag
+    }
+    else{
+      f = 0;                  // clear flag
+    }
+    xr >>= 1;
+    if(f){
+      xr += q2;               // test flag
+    }
+  } while(q2 >>= 2);          // shift twice
+  if(xr < x){
+    return xr +1;             // add for rounding
+  }
+  else{
+    return xr;
+  }
+}
+
+/*! \brief Find minimum value.
+ *
+ *  Returns the smallest value.
+ *
+ *  \return  Min(x,y).
+ */
+unsigned int min(unsigned int x, unsigned int y)
+{
+  if(x < y){
+    return x;
+  }
+  else{
+    return y;
+  }
+}
+
