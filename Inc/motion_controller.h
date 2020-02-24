@@ -8,9 +8,10 @@
 #ifndef MOTION_CONTROLLER_H_
 #define MOTION_CONTROLLER_H_
 
-// Direction of stepper motor movement
-#define CW  0
-#define CCW 1
+#include "main.h"
+
+#define TRUE 1
+#define FALSE 0
 
 /*! \brief Holding data used by timer interrupt for speed ramp calculation.
  *
@@ -34,6 +35,56 @@ typedef struct {
   //! Counter used when accelerateing/decelerateing to calculate step_delay.
   signed int accel_count;
 } speedRampData;
+
+/*! \brief Holding configuration of the motion controller
+ *
+ *  Contains configuration data used by motion controller functions
+ *  Data is written to it by MotionInitialize() and is used for any motion functions.
+ */
+typedef struct{
+	//! Back/Down limit switch GPIO port and pin, should be configured as input
+	GPIO_TypeDef *back_down_limit_gpio_port;
+	uint16_t back_down_limit_pin;
+
+	//! Front/Up limit switch GPIO port and pin, should be configured as input
+	GPIO_TypeDef *front_up_limit_gpio_port;
+	uint16_t front_up_limit_pin;
+
+	//! DIR GPIO port and pin to generate DIR signal, should be configured as output
+	GPIO_TypeDef *dir_gpio_port;
+	uint16_t dir_pin;
+
+	//! STEP GPIO port and pin to generate STEP signal, should be configured as output
+	GPIO_TypeDef *step_gpio_port;
+	uint16_t step_pin;
+
+	//! Handler for timer instance, use to generate interrupt, should be stopped and configured as up counting with interrupt
+	TIM_HandleTypeDef *timer;
+
+	//! Handler for UART instance to communicate with TMC2209
+	UART_HandleTypeDef *uart;
+
+	//! TMC driver UART address to communicate with
+	uint8_t	tmc_addr;
+
+	//! Contains data used by timer interrupt to calculate speed profile.
+	speedRampData ramp_data;
+
+	//! Actual position of the axis
+	int position;
+
+	//! True when stepper motor is running.
+	uint8_t running:1;
+
+	//! True if initialized successfully
+	uint8_t initialized:1;
+
+
+} MotionController;
+
+// Direction of stepper motor movement
+#define CW  0
+#define CCW 1
 
 /*! \Brief Frequency of timer1 in [Hz].
  *
@@ -60,11 +111,10 @@ typedef struct {
 #define DECEL 2
 #define RUN   3
 
-void speed_cntr_Move(signed int step, unsigned int accel, unsigned int decel, unsigned int speed);
-void speed_cntr_Init_Timer1(void);
-void speed_cntr_interrupt(void);
-
-//! Global status flags
-extern struct GLOBAL_FLAGS status;
+void MotionControllerInitialize(MotionController *m);
+void MotionMoveSteps(MotionController *m, signed int step, unsigned int accel, unsigned int decel, unsigned int speed);
+void MotionMoveSpeed(MotionController *m, unsigned char dir, unsigned int accel, unsigned int speed);
+void MotionMoveStop(MotionController *m, unsigned char mode, unsigned int decel);
+void MotionUpdate(MotionController *m);
 
 #endif /* MOTION_CONTROLLER_H_ */

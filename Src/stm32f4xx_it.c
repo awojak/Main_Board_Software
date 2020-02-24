@@ -65,7 +65,7 @@ extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
 extern TIM_HandleTypeDef htim8;
 /* USER CODE BEGIN EV */
-extern TIM_HandleTypeDef htim3;
+extern MotionController MotionX;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -224,7 +224,7 @@ void TIM1_TRG_COM_TIM11_IRQHandler(void)
 void TIM3_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM3_IRQn 0 */
-	speed_cntr_interrupt();
+	MotionUpdate(&MotionX);
   /* USER CODE END TIM3_IRQn 0 */
   HAL_TIM_IRQHandler(&htim3);
   /* USER CODE BEGIN TIM3_IRQn 1 */

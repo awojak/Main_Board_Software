@@ -6,13 +6,7 @@
  */
 
 #include "motion_controller.h"
-#include "global.h"
 #include "tools.h"
-#include "main.h"
-
-extern TIM_HandleTypeDef htim3;
-//! Cointains data for timer interrupt.
-speedRampData srd;
 
 /*! \brief Move the stepper motor a given number of steps.
  *
@@ -27,7 +21,7 @@ speedRampData srd;
  *  \param decel  Decelration to use, in 0.01*rad/sec^2.
  *  \param speed  Max speed, in 0.01*rad/sec.
  */
-void speed_cntr_Move(signed int step, unsigned int accel, unsigned int decel, unsigned int speed)
+void MotionMoveSteps(MotionController *m, signed int step, unsigned int accel, unsigned int decel, unsigned int speed)
 {
   //! Number of steps before we hit max speed.
   unsigned int max_s_lim;
@@ -36,28 +30,28 @@ void speed_cntr_Move(signed int step, unsigned int accel, unsigned int decel, un
 
   // Set direction from sign on step value.
   if(step < 0){
-    srd.dir = CCW;
+    m->ramp_data.dir = CCW;
     step = -step;
-    HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(m->dir_gpio_port, m->dir_pin, GPIO_PIN_RESET);
   }
   else{
-    srd.dir = CW;
-    HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+    m->ramp_data.dir = CW;
+    HAL_GPIO_WritePin(m->dir_gpio_port, m->dir_pin, GPIO_PIN_SET);
   }
 
   // If moving only 1 step.
   if(step == 1){
     // Move one step...
-    srd.accel_count = -1;
+    m->ramp_data.accel_count = -1;
     // ...in DECEL state.
-    srd.run_state = DECEL;
+    m->ramp_data.run_state = DECEL;
     // Just a short delay so main() can act on 'running'.
-    srd.step_delay = 1000;
-    status.running = TRUE;
+    m->ramp_data.step_delay = 1000;
+    m->running = TRUE;
 
-    htim3.Instance->ARR = 10;
+    m->timer->Instance->ARR = 10;
     // Run Timer
-    HAL_TIM_Base_Start_IT(&htim3);
+    HAL_TIM_Base_Start_IT(m->timer);
   }
   // Only move if number of steps to move is not zero.
   else if(step != 0){
@@ -65,12 +59,12 @@ void speed_cntr_Move(signed int step, unsigned int accel, unsigned int decel, un
 
     // Set max speed limit, by calc min_delay to use in timer.
     // min_delay = (alpha / tt)/ w
-    srd.min_delay = (int)(A_T_x100 / speed);
+    m->ramp_data.min_delay = (int)(A_T_x100 / speed);
 
     // Set accelration by calc the first (c0) step delay .
     // step_delay = 1/tt * Sqrt(2*alpha/accel)
     // step_delay = ( tfreq*0.676/100 )*100 * Sqrt( (2*alpha*10000000000) / (accel*100) )/10000
-    srd.step_delay = (unsigned int)((T1_FREQ_148 * Sqrt(A_SQ / accel))/100);
+    m->ramp_data.step_delay = (unsigned int)((T1_FREQ_148 * Sqrt(A_SQ / accel))/100);
 
     // Find out after how many steps does the speed hit the max speed limit.
     // max_s_lim = speed^2 / (2*alpha*accel)
@@ -91,58 +85,56 @@ void speed_cntr_Move(signed int step, unsigned int accel, unsigned int decel, un
 
     // Use the limit we hit first to calc decel.
     if(accel_lim <= max_s_lim){
-      srd.decel_val = (int)(accel_lim - step);
+      m->ramp_data.decel_val = (int)(accel_lim - step);
     }
     else{
-      srd.decel_val = -(int)(((long)max_s_lim*accel)/decel);
+      m->ramp_data.decel_val = -(int)(((long)max_s_lim*accel)/decel);
     }
     // We must decelrate at least 1 step to stop.
-    if(srd.decel_val == 0){
-      srd.decel_val = -1;
+    if(m->ramp_data.decel_val == 0){
+      m->ramp_data.decel_val = -1;
     }
 
     // Find step to start decleration.
-    srd.decel_start = (unsigned int)(step + srd.decel_val);
+    m->ramp_data.decel_start = (unsigned int)(step + m->ramp_data.decel_val);
 
     // If the maximum speed is so low that we dont need to go via accelration state.
-    if(srd.step_delay <= srd.min_delay){
-      srd.step_delay = srd.min_delay;
-      srd.run_state = RUN;
+    if(m->ramp_data.step_delay <= m->ramp_data.min_delay){
+      m->ramp_data.step_delay = m->ramp_data.min_delay;
+      m->ramp_data.run_state = RUN;
     }
     else{
-      srd.run_state = ACCEL;
+      m->ramp_data.run_state = ACCEL;
     }
 
     // If the minimum speed is to low
-    if(srd.step_delay >= 65536){
-      srd.step_delay = 65535;
+    if(m->ramp_data.step_delay >= 65536){
+      m->ramp_data.step_delay = 65535;
     }
 
     // Reset counter.
-    srd.accel_count = 0;
-    status.running = TRUE;
+    m->ramp_data.accel_count = 0;
+    m->running = TRUE;
 
-    htim3.Instance->ARR = 10;
+    m->timer->Instance->ARR = 10;
     // Run Timer
-    HAL_TIM_Base_Start_IT(&htim3);
+    HAL_TIM_Base_Start_IT(m->timer);
   }
 }
 
-/*! \brief Init of Timer/Counter1.
+/*! \brief Init of Motion Controller
  *
- *  Set up Timer/Counter1 to use mode 1 CTC and
- *  enable Output Compare A Match Interrupt.
+ *  Initialize Motion Controller variables to correct states
  */
-void speed_cntr_Init_Timer1(void)
+void MotionControllerInitialize(MotionController *m)
 {
-  // Tells what part of speed ramp we are in.
-  srd.run_state = STOP;
-
+	// Tells what part of speed ramp we are in
+	m->ramp_data.run_state = STOP;
+	m->running = FALSE;
 }
 
-/*! \brief Timer/Counter1 Output Compare A Match Interrupt.
+/*! \brief Motion Update execute in timer interrupt
  *
- *  Timer/Counter1 Output Compare A Match Interrupt.
  *  Increments/decrements the position of the stepper motor
  *  exept after last position, when it stops.
  *  The \ref step_delay defines the period of this interrupt
@@ -150,77 +142,97 @@ void speed_cntr_Init_Timer1(void)
  *  A new step delay is calculated to follow wanted speed profile
  *  on basis of accel/decel parameters.
  */
-
-void speed_cntr_interrupt( void )
+void MotionUpdate(MotionController *m)
 {
   // Holds next delay period.
   unsigned int new_step_delay=0;
-  // Remember the last step delay used when accelrating.
-  static int last_accel_delay;
+  // Remember the last step delay used when accelerating.
+  //static int last_accel_delay;
   // Counting steps when moving.
   static unsigned int step_count = 0;
   // Keep track of remainder from new_step-delay calculation to incrase accurancy
   static unsigned int rest = 0;
 
-  htim3.Instance->ARR = srd.step_delay;
+  m->timer->Instance->ARR = m->ramp_data.step_delay;
 
-  switch(srd.run_state) {
+  switch(m->ramp_data.run_state) {
     case STOP:
       step_count = 0;
       rest = 0;
       // Stop Timer/Counter 1.
-      HAL_TIM_Base_Stop_IT(&htim3);
-      status.running = FALSE;
+      HAL_TIM_Base_Stop_IT(m->timer);
+      m->running = FALSE;
       break;
 
     case ACCEL:
-    	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
-      //sm_driver_StepCounter(srd.dir);
+    	HAL_GPIO_TogglePin(m->step_gpio_port, m->step_pin);
+      //sm_driver_StepCounter(m->ramp_data.dir);
       step_count++;
-      srd.accel_count++;
-      new_step_delay = (unsigned int)(srd.step_delay - (((2 * (long)srd.step_delay) + rest)/(4 * srd.accel_count + 1)));
-      rest = (unsigned int)(((2 * (long)srd.step_delay)+rest)%(4 * srd.accel_count + 1));
+      m->ramp_data.accel_count++;
+      new_step_delay = (unsigned int)(m->ramp_data.step_delay - (((2 * (long)m->ramp_data.step_delay) + rest)/(4 * m->ramp_data.accel_count + 1)));
+      rest = (unsigned int)(((2 * (long)m->ramp_data.step_delay)+rest)%(4 * m->ramp_data.accel_count + 1));
       // Chech if we should start decelration.
-      if(step_count >= srd.decel_start) {
-        srd.accel_count = srd.decel_val;
+      if(step_count >= m->ramp_data.decel_start) {
+        m->ramp_data.accel_count = m->ramp_data.decel_val;
         rest = 0;
-        srd.run_state = DECEL;
+        m->ramp_data.run_state = DECEL;
       }
       // Chech if we hitted max speed.
-      else if(new_step_delay <= srd.min_delay) {
+      else if(new_step_delay <= m->ramp_data.min_delay) {
         //last_accel_delay = new_step_delay;
-        new_step_delay = srd.min_delay;
+        new_step_delay = m->ramp_data.min_delay;
         rest = 0;
-        srd.run_state = RUN;
+        m->ramp_data.run_state = RUN;
       }
       break;
 
     case RUN:
-    	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
-      //sm_driver_StepCounter(srd.dir);
+    	HAL_GPIO_TogglePin(m->step_gpio_port, m->step_pin);
+      //sm_driver_StepCounter(m->ramp_data.dir);
       step_count++;
-      new_step_delay = srd.min_delay;
+      new_step_delay = m->ramp_data.min_delay;
       // Chech if we should start decelration.
-      if(step_count >= srd.decel_start) {
-        srd.accel_count = srd.decel_val;
+      if(step_count >= m->ramp_data.decel_start) {
+        m->ramp_data.accel_count = m->ramp_data.decel_val;
         // Start decelration with same delay as accel ended with.
         //new_step_delay = last_accel_delay;
-        srd.run_state = DECEL;
+        m->ramp_data.run_state = DECEL;
       }
       break;
 
     case DECEL:
-    	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
-      //sm_driver_StepCounter(srd.dir);
+    	HAL_GPIO_TogglePin(m->step_gpio_port, m->step_pin);
+      //sm_driver_StepCounter(m->ramp_data.dir);
       step_count++;
-      srd.accel_count++;
-      new_step_delay = (unsigned int)( srd.step_delay - (int)(((2 * (long)srd.step_delay) + (long)rest)/(4 * srd.accel_count + 1)));
-      rest = (unsigned int)(((2 * (long)srd.step_delay)+(long)rest)%(4 * srd.accel_count + 1));
+      m->ramp_data.accel_count++;
+      new_step_delay = (unsigned int)( m->ramp_data.step_delay - (int)(((2 * (long)m->ramp_data.step_delay) + (long)rest)/(4 * m->ramp_data.accel_count + 1)));
+      rest = (unsigned int)(((2 * (long)m->ramp_data.step_delay)+(long)rest)%(4 * m->ramp_data.accel_count + 1));
       // Check if we at last step
-      if(srd.accel_count >= 0){
-        srd.run_state = STOP;
+      if(m->ramp_data.accel_count >= 0){
+        m->ramp_data.run_state = STOP;
       }
       break;
   }
-  srd.step_delay = new_step_delay;
+  m->ramp_data.step_delay = new_step_delay;
 }
+
+/*! \brief Motion Move Speed
+ *
+ *  Move motor at constant speed, use acceleration at the beginning
+ *  To stop motor use MotionMoveStop() function
+ */
+void MotionMoveSpeed(MotionController *m, unsigned char dir, unsigned int accel, unsigned int speed)
+{
+
+}
+
+/*! \brief Motion Move Stop
+ *
+ *  Stop motor, use deceleration or stop immediately
+ *  Mode determines the behavior
+ */
+void MotionMoveStop(MotionController *m, unsigned char mode, unsigned int decel)
+{
+
+}
+

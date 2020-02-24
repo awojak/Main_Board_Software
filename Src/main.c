@@ -28,7 +28,6 @@
 #include "tools.h"
 #include "task_scheduler.h"
 #include "motion_controller.h"
-#include "global.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -62,6 +61,20 @@ UART_HandleTypeDef huart2;
 PA2     ------> USART2_TX
 PA3     ------> USART2_RX
 */
+
+MotionController MotionX = {
+		.back_down_limit_gpio_port = 0,
+		.back_down_limit_pin = 0,
+		.front_up_limit_gpio_port = 0,
+		.front_up_limit_pin = 0,
+		.dir_gpio_port = LD3_GPIO_Port,
+		.dir_pin = LD3_Pin,
+		.step_gpio_port = LD5_GPIO_Port,
+		.step_pin = LD5_Pin,
+		.timer = &htim3,
+		.uart = &huart2,
+		.tmc_addr = 0
+};
 
 SchedulerTasks stsTasks;
 Task tLedTask, tSendPos;
@@ -209,15 +222,15 @@ void usbSend()
 void Core()
 {
 
-	if(status.running==FALSE)
+	if(MotionX.running==FALSE)
 	{
 		if(flag)
 		{
-			speed_cntr_Move(100000, 10000, 10000, 4000);
+			MotionMoveSteps(&MotionX, 100000, 50000, 10000, 4000);
 			flag = 0;
 		} else
 		{
-			speed_cntr_Move(-100000, 10000, 10000, 4000);
+			MotionMoveSteps(&MotionX, -100000, 50000, 10000, 4000);
 			flag = 1;
 		}
 	}
@@ -278,7 +291,7 @@ int main(void)
 	//__HAL_TIM_ENABLE_IT(&htim1, TIM_IT_TRIGGER);
 	//HAL_TIM_Base_Start_IT(&htim3);
 
-  speed_cntr_Init_Timer1();
+  MotionControllerInitialize(&MotionX);
   /* USER CODE END 2 */
 
   /* Infinite loop */
